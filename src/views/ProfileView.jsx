@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { tokens } from '../theme/tokens'
+import { IMPORT_COLUMNS, parseImportFile } from '../domain/importRecords'
 
 export function ProfileView({
   user,
@@ -7,6 +8,8 @@ export function ProfileView({
   onUpdateUsername,
   onUpdatePetName,
   onChangePassword,
+  onImportTransactions,
+  categoryOptions,
   onLogout,
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
@@ -17,6 +20,9 @@ export function ProfileView({
   const [confirmPassword, setConfirmPassword] = useState('')
   const [status, setStatus] = useState('')
   const [error, setError] = useState('')
+  const [importItems, setImportItems] = useState([])
+  const [importErrors, setImportErrors] = useState([])
+  const [importing, setImporting] = useState(false)
 
   useEffect(() => {
     setUsername(user?.username || '')
@@ -39,6 +45,8 @@ export function ProfileView({
     setError('')
     setNewPassword('')
     setConfirmPassword('')
+    setImportItems([])
+    setImportErrors([])
   }
 
   async function saveName(event) {
@@ -72,6 +80,39 @@ export function ProfileView({
     }
   }
 
+  async function readImportFile(event) {
+    const file = event.target.files?.[0]
+    setError('')
+    setStatus('')
+    setImportItems([])
+    setImportErrors([])
+    if (!file) return
+    const text = await file.text()
+    const { items, errors } = parseImportFile(text, file.name, categoryOptions)
+    setImportItems(items)
+    setImportErrors(errors)
+  }
+
+  async function runImport() {
+    setError('')
+    setStatus('')
+    setImporting(true)
+    try {
+      const count = await onImportTransactions(importItems)
+      setImportItems([])
+      setImportErrors([])
+      setStatus(`Imported ${count} records.`)
+    } catch (err) {
+      setError(err.message || 'Could not import records.')
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  const importExpense = importItems.filter((tx) => tx.type === 'expense').reduce((sum, tx) => sum + tx.amount, 0)
+  const importIncome = importItems.filter((tx) => tx.type === 'income').reduce((sum, tx) => sum + tx.amount, 0)
+  const dialogTitles = { name: 'Name', password: 'Password', import: 'Import records' }
+
   return (
     <div style={wrap}>
       <button
@@ -92,6 +133,9 @@ export function ProfileView({
           <button type="button" style={menuItem} onClick={() => openDialog('password')}>
             Password
           </button>
+          <button type="button" style={menuItem} onClick={() => openDialog('import')}>
+            Import
+          </button>
           <button type="button" style={{ ...menuItem, color: tokens.color.danger }} onClick={onLogout}>
             Log out
           </button>
@@ -102,7 +146,7 @@ export function ProfileView({
         <div style={overlay} onMouseDown={closeDialog}>
           <section style={modal} onMouseDown={(event) => event.stopPropagation()}>
             <div style={modalHeader}>
-              <h3 style={title}>{dialog === 'name' ? 'Name' : 'Password'}</h3>
+              <h3 style={title}>{dialogTitles[dialog]}</h3>
               <button type="button" className="btn-ghost" style={closeButton} onClick={closeDialog}>
                 x
               </button>
@@ -140,6 +184,40 @@ export function ProfileView({
                   Save
                 </button>
               </form>
+            ) : dialog === 'import' ? (
+              <div>
+                <p style={hint}>
+                  Upload a CSV or JSON file with columns: {IMPORT_COLUMNS.join(', ')}. Dates use YYYY-MM-DD.
+                </p>
+                <input
+                  style={input}
+                  type="file"
+                  accept=".csv,.json,text/csv,application/json"
+                  onChange={readImportFile}
+                />
+                {importItems.length > 0 ? (
+                  <p style={hint}>
+                    Ready to import {importItems.length} records: ${importExpense.toFixed(2)} expenses,
+                    ${importIncome.toFixed(2)} income.
+                  </p>
+                ) : null}
+                {importErrors.length > 0 ? (
+                  <p style={errorText}>
+                    {importErrors.length} rows skipped. {importErrors.slice(0, 3).join(' ')}
+                  </p>
+                ) : null}
+                {error ? <p style={errorText}>{error}</p> : null}
+                {status ? <p style={okText}>{status}</p> : null}
+                <button
+                  type="button"
+                  className="btn-action"
+                  style={{ width: '100%' }}
+                  disabled={importItems.length === 0 || importing}
+                  onClick={runImport}
+                >
+                  {importing ? 'Importing...' : 'Import'}
+                </button>
+              </div>
             ) : (
               <form onSubmit={savePassword}>
                 <label style={label}>New password</label>
@@ -274,6 +352,13 @@ const input = {
   border: `1px solid ${tokens.color.border}`,
   background: '#fff',
   fontSize: 14,
+}
+
+const hint = {
+  margin: '0 0 10px',
+  fontSize: 13,
+  color: tokens.color.subtext,
+  lineHeight: 1.5,
 }
 
 const errorText = {

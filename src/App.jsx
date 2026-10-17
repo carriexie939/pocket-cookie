@@ -288,6 +288,15 @@ function App() {
     await api.changePassword(payload)
   }
 
+  async function handleImportTransactions(items) {
+    const created = []
+    for (let i = 0; i < items.length; i += 200) {
+      created.push(...(await api.createTransactions(items.slice(i, i + 200))))
+    }
+    setTransactions((prev) => [...created, ...prev].sort((a, b) => new Date(b.date) - new Date(a.date)))
+    return created.length
+  }
+
   async function handleCreateSplitExpense(payload) {
     const cat = 'bills'
     const items = [{
@@ -398,6 +407,8 @@ function App() {
             onUpdateUsername={handleUpdateUsername}
             onUpdatePetName={handleUpdatePetName}
             onChangePassword={handleChangePassword}
+            onImportTransactions={handleImportTransactions}
+            categoryOptions={CATEGORY_OPTIONS}
             onLogout={handleLogout}
           />
         </header>
